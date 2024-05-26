@@ -34,13 +34,13 @@ logger = logging.getLogger(__name__)
 
 # hyper params
 
-train_data_dir  = '/Users/orange/code/orangeai-recommendation/dataset/criteo/slot_train_data_full'
-eval_data_dir = '/Users/orange/code/orangeai-recommendation/dataset/criteo/slot_test_data_full'
-model_save_checkpoint_dir='/Users/orange/code/orangeai-recommendation/output'
-batch_size = 1024
-learning_rate = 0.001
-epoches = 5
-interval_batch = 5
+train_data_dir  = '/home/orange/orangeai/datasets/criteo/slot_train_data_full'
+eval_data_dir = '/home/orange/orangeai/datasets/criteo/slot_test_data_full'
+model_save_checkpoint_dir='/home/orange/orangeai/orangeai-recommendation/output'
+batch_size = 8192
+learning_rate = 0.01
+epoches = 2
+interval_batch = 9
 lr_scheduler_epoch_size = 1
 device="cuda"
 
@@ -89,10 +89,6 @@ RuntimeError: Adam does not support sparse gradients, please consider SparseAdam
 criterion = nn.BCEWithLogitsLoss()  # 例如，对于二分类问题使用二元交叉熵损失  
 
 
-
-
-
-
 def train_eval_loop(model, 
                     train_data_dir, 
                     eval_data_dir, 
@@ -124,7 +120,7 @@ def train_eval_loop(model,
             RecDataset(file_list = eval_data_dir, mode="eval"), 
             batch_size=batch_size, 
             shuffle=False)  
-        
+
         model = model.to(device)
         model.train()
         train_mini_batch_loss = 0.0
@@ -134,12 +130,14 @@ def train_eval_loop(model,
         for batch_idx, data in enumerate(tqdm(train_data_loader, desc=f"Epoch {epoch+1}/{epoches}")):
             if epoch == 0:
                 train_iter_batch_num = batch_idx  + 1 #record the one whole epoch train dataloader batch nums
-            data = data.to(device)
             label, dense_feature, sparse_feature= data[0], data[1], data[2]
+            label = label.to(device)  
+            dense_feature = dense_feature.to(device)  
+            sparse_feature = [s.to(device) for s in sparse_feature if sparse_feature]
             optimizer.zero_grad()
             logits = model(dense_feature, sparse_feature)
-            train_mini_batch_y_true.extend(label.detach().numpy())  
-            train_mini_batch_y_pred.extend(torch.sigmoid(logits).detach().numpy())  
+            train_mini_batch_y_true.extend(label.cpu().detach().numpy())  
+            train_mini_batch_y_pred.extend(torch.sigmoid(logits).cpu().detach().numpy())  
             loss = criterion(logits, label.float())
             loss.backward()
             optimizer.step()
@@ -159,7 +157,6 @@ def train_eval_loop(model,
                 writer.add_scalar('Recall/Train', recall, tb_x)  
                 writer.add_scalar('F1 Score/Train', f1, tb_x)  
                 train_mini_batch_loss = 0.0
-        #print('epoch [{}/{}] train one epoch loss: {}'.format(epoch + 1, epoches, train_loss / train_iter_batch_num))
         # update the learning rate of current optimizer
         scheduler.step()
         # get the learning rate of current optimizer
@@ -179,14 +176,16 @@ def train_eval_loop(model,
             for batch_idx, data in enumerate(tqdm(eval_data_loader, desc=f"Epoch {epoch+1}/{epoches}")):
                 if epoch == 0:
                     eval_iter_batch_num = batch_idx + 1 #record the one whole epoch eval dataloader batch nums
-                data = data.to(device)
                 label, dense_feature, sparse_feature= data[0], data[1], data[2]
+                label = label.to(device)  
+                dense_feature = dense_feature.to(device)  
+                sparse_feature = [s.to(device) for s in sparse_feature if sparse_feature]
                 logits = model(dense_feature, sparse_feature)
                 loss = criterion(logits, label.float())
                 eval_mini_batch_loss += loss.item()
                 eval_loss += loss.item()
-                y_true.extend(label.detach().numpy())  
-                y_pred.extend(torch.sigmoid(logits).detach().numpy().flatten())  
+                y_true.extend(label.cpu().detach().numpy())  
+                y_pred.extend(torch.sigmoid(logits).cpu().detach().numpy().flatten())  
                 # if batch_idx % interval_batch == 999:
                 #     #batch loss
                 #     eval_batch_avg_loss = eval_mini_batch_loss / interval_batch # average of train batch loss 
@@ -195,7 +194,6 @@ def train_eval_loop(model,
                 #     tb_writer.add_scalar('Loss/eval', eval_batch_avg_loss, tb_x)
                 #     #eval_batch_loss = 0.0
                 #     #batch metrics
-
             # epoch eval: 
             auc, accuracy, precision, recall, f1 = caculate_metrics(y_true, y_pred)
             # record every epoch train and eval TensorBoard logging 
@@ -205,7 +203,6 @@ def train_eval_loop(model,
             writer.add_scalar('Precision/eval', precision, epoch)  
             writer.add_scalar('Recall/eval', recall, epoch)  
             writer.add_scalar('F1 Score/eval', f1, epoch)  
-
             logger.info(f'Epoch {epoch+1}/{epoches}, Eval Loss: {eval_loss / eval_iter_batch_num:.4f}, AUC: {auc:.4f}, '  
             f'Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}')  
             #save the model with best auc and best performance
@@ -236,15 +233,6 @@ def caculate_metrics(y_true:list, y_pred:list)->list:
     return metrics_list
 
 
-# def record_tensorborad():
-#         writer.add_scalar('Loss/eval', eval_loss / eval_iter_batch_num, epoch)  
-#         writer.add_scalar('AUC/eval', auc, epoch)  
-#         writer.add_scalar('Accuracy/eval', accuracy, epoch)  
-#         writer.add_scalar('Precision/eval', precision, epoch)  
-#         writer.add_scalar('Recall/eval', recall, epoch)  
-#         writer.add_scalar('F1 Score/eval', f1, epoch)  
-
-
 # TensorBoard setting 
 writer = SummaryWriter(log_dir='runs/my_experiment')
 train_eval_loop(
@@ -262,3 +250,4 @@ train_eval_loop(
     device=device
 )
 writer.close()
+
