@@ -42,6 +42,14 @@ learning_rate = 0.001
 epoches = 5
 interval_batch = 5
 lr_scheduler_epoch_size = 1
+device="cuda"
+
+if torch.cuda.is_available():  
+    print("CUDA is available! Training on GPU ...")  
+    device = torch.device("cuda")  
+else:  
+    print("CUDA is not available. Training on CPU ...")  
+    device = torch.device("cpu")
 
 train_data_loader = DataLoader(
     RecDataset(file_list = train_data_dir, mode="train"), 
@@ -85,7 +93,19 @@ criterion = nn.BCEWithLogitsLoss()  # 例如，对于二分类问题使用二元
 
 
 
-def train_eval_loop(model, train_data_dir, eval_data_dir, batch_size, optimizer, scheduler, criterion, epoches, writer, interval_batch, model_save_checkpoint_dir=''):
+def train_eval_loop(model, 
+                    train_data_dir, 
+                    eval_data_dir, 
+                    batch_size, 
+                    optimizer, 
+                    scheduler, 
+                    criterion, 
+                    epoches, 
+                    writer, 
+                    interval_batch, 
+                    model_save_checkpoint_dir,
+                    device
+                    ):
     """
         model train and eval and save
     """
@@ -96,7 +116,6 @@ def train_eval_loop(model, train_data_dir, eval_data_dir, batch_size, optimizer,
 
     for epoch in range(epoches):
         logger.info(f'Starting epoch {epoch + 1}/{epoches}')  
-
         train_data_loader = DataLoader(
         RecDataset(file_list = train_data_dir, mode="train"), 
         batch_size=batch_size, 
@@ -106,6 +125,7 @@ def train_eval_loop(model, train_data_dir, eval_data_dir, batch_size, optimizer,
             batch_size=batch_size, 
             shuffle=False)  
         
+        model = model.to(device)
         model.train()
         train_mini_batch_loss = 0.0
         train_loss = 0.0
@@ -114,6 +134,7 @@ def train_eval_loop(model, train_data_dir, eval_data_dir, batch_size, optimizer,
         for batch_idx, data in enumerate(tqdm(train_data_loader, desc=f"Epoch {epoch+1}/{epoches}")):
             if epoch == 0:
                 train_iter_batch_num = batch_idx  + 1 #record the one whole epoch train dataloader batch nums
+            data = data.to(device)
             label, dense_feature, sparse_feature= data[0], data[1], data[2]
             optimizer.zero_grad()
             logits = model(dense_feature, sparse_feature)
@@ -158,6 +179,7 @@ def train_eval_loop(model, train_data_dir, eval_data_dir, batch_size, optimizer,
             for batch_idx, data in enumerate(tqdm(eval_data_loader, desc=f"Epoch {epoch+1}/{epoches}")):
                 if epoch == 0:
                     eval_iter_batch_num = batch_idx + 1 #record the one whole epoch eval dataloader batch nums
+                data = data.to(device)
                 label, dense_feature, sparse_feature= data[0], data[1], data[2]
                 logits = model(dense_feature, sparse_feature)
                 loss = criterion(logits, label.float())
@@ -236,6 +258,7 @@ train_eval_loop(
     epoches=epoches,
     writer=writer,
     interval_batch=interval_batch,
-    model_save_checkpoint_dir=model_save_checkpoint_dir
+    model_save_checkpoint_dir=model_save_checkpoint_dir,
+    device=device
 )
 writer.close()
